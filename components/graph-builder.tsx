@@ -73,8 +73,8 @@ export function GraphBuilder({ graph, setGraph, startNode, setStartNode, goalNod
       G: [],
       H: ["B"],
       J: ["K"],
-      C: ["Z", "W"],
-      E: [],
+      C: [],
+      E: ["Z", "W"],
       B: [],
       K: ["L"],
       Z: [],
@@ -223,13 +223,12 @@ export function GraphBuilder({ graph, setGraph, startNode, setStartNode, goalNod
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span
-                          className={`font-bold text-lg ${
-                            startNode === node
-                              ? "text-green-600"
-                              : goalNodes.includes(node)
-                                ? "text-red-600"
-                                : "text-gray-800"
-                          }`}
+                          className={`font-bold text-lg ${startNode === node
+                            ? "text-green-600"
+                            : goalNodes.includes(node)
+                              ? "text-red-600"
+                              : "text-gray-800"
+                            }`}
                         >
                           {node}
                         </span>

@@ -42,76 +42,118 @@ export function GraphVisualization({
     const nodeIds = Object.keys(graph)
     if (nodeIds.length === 0) return { nodes: [], edges: [] }
 
-    // Crear posiciones para los nodos usando un layout jerárquico
-    const nodes: Node[] = []
-    const edges: Edge[] = []
+    // --- INICIO DEL NUEVO ALGORITMO DE DISEÑO DE ÁRBOL ---
 
-    // Función para calcular niveles del árbol
-    const calculateLevels = (startNodeId: string) => {
-      const levels: { [level: number]: string[] } = {}
-      const visited = new Set<string>()
-      const queue: { node: string; level: number }[] = [{ node: startNodeId, level: 0 }]
+    const positionedNodes = new Map<string, Node>()
+    const levels = new Map<string, number>()
+    const childrenMap = new Map<string, string[]>()
+    const allNodeIds = new Set(nodeIds)
 
-      while (queue.length > 0) {
-        const { node, level } = queue.shift()!
+    // 1. Determinar la estructura del grafo: hijos y nodos raíz
+    const childNodeIds = new Set<string>()
+    Object.entries(graph).forEach(([parent, children]) => {
+      childrenMap.set(parent, children)
+      children.forEach((child) => childNodeIds.add(child))
+    })
 
-        if (visited.has(node)) continue
-        visited.add(node)
+    const rootNodes = nodeIds.filter((id) => !childNodeIds.has(id))
+    const mainRoot = startNode && allNodeIds.has(startNode) ? startNode : rootNodes[0] || nodeIds[0]
 
-        if (!levels[level]) levels[level] = []
-        levels[level].push(node)
+    if (!mainRoot) return { nodes: [], edges: [] }
 
-        const children = graph[node] || []
-        children.forEach((child) => {
-          if (!visited.has(child)) {
-            queue.push({ node: child, level: level + 1 })
-          }
-        })
-      }
+    // 2. Calcular niveles (coordenada Y) usando BFS desde la raíz principal
+    const bfsQueue: { nodeId: string; level: number }[] = [{ nodeId: mainRoot, level: 0 }]
+    const visitedBfs = new Set<string>([mainRoot])
+    levels.set(mainRoot, 0)
 
-      // Agregar nodos no visitados en el último nivel
-      const unvisited = nodeIds.filter((id) => !visited.has(id))
-      if (unvisited.length > 0) {
-        const maxLevel = Math.max(...Object.keys(levels).map(Number))
-        if (!levels[maxLevel + 1]) levels[maxLevel + 1] = []
-        levels[maxLevel + 1].push(...unvisited)
-      }
-
-      return levels
+    let maxLevel = 0
+    while (bfsQueue.length > 0) {
+      const { nodeId, level } = bfsQueue.shift()!
+      maxLevel = Math.max(maxLevel, level)
+      const children = childrenMap.get(nodeId) || []
+      children.forEach((child) => {
+        if (!visitedBfs.has(child)) {
+          visitedBfs.add(child)
+          levels.set(child, level + 1)
+          bfsQueue.push({ nodeId: child, level: level + 1 })
+        }
+      })
     }
 
-    const levels = calculateLevels(startNode || nodeIds[0])
-    const maxLevel = Math.max(...Object.keys(levels).map(Number))
-
-    // Posicionar nodos
-    Object.entries(levels).forEach(([levelStr, levelNodes]) => {
-      const level = Number.parseInt(levelStr)
-      const y = (height / (maxLevel + 1)) * (level + 0.5)
-
-      levelNodes.forEach((nodeId, index) => {
-        const x = (width / (levelNodes.length + 1)) * (index + 1)
-        nodes.push({ id: nodeId, x, y })
+    // 3. Obtener recorrido post-orden para posicionar hijos antes que padres
+    const postOrder: string[] = []
+    const visitedDfs = new Set<string>()
+    const buildPostOrder = (nodeId: string) => {
+      visitedDfs.add(nodeId)
+      const children = childrenMap.get(nodeId) || []
+      children.forEach((child) => {
+        if (!visitedDfs.has(child)) buildPostOrder(child)
       })
+      postOrder.push(nodeId)
+    }
+
+    // Construir el árbol desde la raíz principal y luego los nodos desconectados
+    if (allNodeIds.has(mainRoot)) buildPostOrder(mainRoot);
+    allNodeIds.forEach(id => {
+      if (!visitedDfs.has(id)) buildPostOrder(id);
+    });
+
+    // 4. Asignar posiciones X iniciales a los nodos
+    const leafXCounter = { val: 0 }
+    const hSpacing = 70 // Espacio horizontal mínimo entre nodos hoja
+    const vSpacing = height / (maxLevel + 2) // Espacio vertical entre niveles
+
+    postOrder.forEach((nodeId) => {
+      const children = childrenMap.get(nodeId) || []
+      const y = (levels.get(nodeId)! + 1) * vSpacing
+      let x = 0
+
+      const positionedChildren = children.map((c) => positionedNodes.get(c)).filter(Boolean) as Node[]
+
+      if (positionedChildren.length === 0) {
+        // Es un nodo hoja, se le asigna el siguiente espacio disponible
+        x = leafXCounter.val
+        leafXCounter.val += hSpacing
+      } else {
+        // Es un nodo padre, su X es el promedio del X de sus hijos
+        const childrenXSum = positionedChildren.reduce((acc, child) => acc + child.x, 0)
+        x = childrenXSum / positionedChildren.length
+      }
+      positionedNodes.set(nodeId, { id: nodeId, x, y })
     })
 
-    // Crear aristas
+    // 5. Centrar el grafo completo en el canvas
+    const allX = Array.from(positionedNodes.values()).map((n) => n.x)
+    const minX = Math.min(...allX)
+    const maxX = Math.max(...allX)
+    const graphWidth = maxX - minX
+    const xOffset = graphWidth > 0 ? (width - graphWidth) / 2 - minX : width / 2 - (positionedNodes.get(mainRoot)?.x || 0)
+
+    const finalNodes: Node[] = Array.from(positionedNodes.values()).map((node) => ({
+      ...node,
+      x: node.x + xOffset,
+    }))
+
+    // --- FIN DEL NUEVO ALGORITMO ---
+
+    const finalEdges: Edge[] = []
     Object.entries(graph).forEach(([from, connections]) => {
       connections.forEach((to) => {
-        edges.push({ from, to })
+        finalEdges.push({ from, to })
       })
     })
 
-    return { nodes, edges }
+    return { nodes: finalNodes, edges: finalEdges }
   }, [graph, startNode, width, height])
 
   const getNodeColor = (nodeId: string) => {
-    if (foundNodes.includes(nodeId)) return "#10b981" // verde para encontrados
-    if (currentNode === nodeId) return "#3b82f6" // azul para nodo actual
-    if (visitedNodes.includes(nodeId)) return "#313131ff" // gris para visitados
-    if (queueNodes.includes(nodeId) || stackNodes.includes(nodeId)) return "#f59e0b" // amarillo para en cola/pila
-    if (startNode === nodeId) return "#059669" // verde oscuro para inicial
-    if (goalNodes.includes(nodeId)) return "#dc2626" // rojo para meta
-    return "#a8a8a8ff" // gris claro por defecto
+    if (foundNodes.includes(nodeId)) return "#10b981"
+    if (currentNode === nodeId) return "#3b82f6"
+    if (visitedNodes.includes(nodeId)) return "#313131ff"
+    if (queueNodes.includes(nodeId) || stackNodes.includes(nodeId)) return "#f59e0b"
+    if (startNode === nodeId) return "#059669"
+    if (goalNodes.includes(nodeId)) return "#dc2626"
+    return "#a8a8a8ff"
   }
 
   const getNodeStroke = (nodeId: string) => {
@@ -132,13 +174,10 @@ export function GraphVisualization({
   return (
     <div className="border rounded-lg bg-white">
       <svg width={width} height={height} className="w-full h-auto">
-        {/* Renderizar aristas */}
         {edges.map((edge, index) => {
           const fromNode = nodes.find((n) => n.id === edge.from)
           const toNode = nodes.find((n) => n.id === edge.to)
-
           if (!fromNode || !toNode) return null
-
           return (
             <line
               key={index}
@@ -152,15 +191,11 @@ export function GraphVisualization({
             />
           )
         })}
-
-        {/* Definir marcador de flecha */}
         <defs>
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
             <polygon points="0 0, 10 3.5, 0 7" fill="#9ca3af" />
           </marker>
         </defs>
-
-        {/* Renderizar nodos */}
         {nodes.map((node) => (
           <g key={node.id}>
             <circle
@@ -183,8 +218,7 @@ export function GraphVisualization({
           </g>
         ))}
       </svg>
-
-      {/* Leyenda */}
+      {/* ... Tu leyenda no necesita cambios ... */}
       <div className="p-3 border-t bg-gray-50 text-xs">
         <div className="flex flex-wrap gap-4">
           <div className="flex items-center gap-1">
