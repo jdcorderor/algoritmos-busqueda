@@ -13,6 +13,9 @@ export default function GraphSearchApp() {
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-12">
       <div className="max-w-7xl mx-auto">
+        <div className="bg-gray-100 rounded-lg p-4 my-4">
+          <h1 className="text-2xl text-center font-bold">Algoritmos de Búsqueda (BFS, DFS, Backtrack)</h1>
+        </div>
         <Tabs defaultValue="builder" className="space-y-6">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="builder">Constructor de Grafos</TabsTrigger>
